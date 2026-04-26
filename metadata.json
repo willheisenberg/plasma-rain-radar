@@ -1,0 +1,22 @@
+{
+  "KPackageStructure": "Plasma/Applet",
+  "KPlugin": {
+    "Authors": [
+      {
+        "Email": "",
+        "Name": "Local Project"
+      }
+    ],
+    "Category": "Online Services",
+    "Description": "Zeigt die aktuelle Regenentwicklung aus DWD-Radar-Daten im Panel-Popup.",
+    "EnabledByDefault": true,
+    "Icon": "weather-showers-scattered",
+    "Id": "org.example.plasmoid.rainradar",
+    "License": "MIT",
+    "Name": "DWD Regenradar",
+    "Version": "0.2.0",
+    "Website": "https://opendata.dwd.de/weather/radar/sites/"
+  },
+  "X-Plasma-API-Minimum-Version": "6.0",
+  "X-Plasma-NotificationArea": "false"
+}
