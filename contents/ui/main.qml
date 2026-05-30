@@ -35,7 +35,7 @@ PlasmoidItem {
     property real ipLongitude: 0
     property bool ipLocationValid: false
 
-    readonly property var userCoordinate: (positionSource.position.coordinate.isValid)
+    readonly property var userCoordinate: (positionSource && positionSource.position && positionSource.position.coordinate && positionSource.position.coordinate.isValid)
         ? positionSource.position.coordinate
         : (ipLocationValid ? QtPositioning.coordinate(ipLatitude, ipLongitude) : null)
 
@@ -129,7 +129,7 @@ PlasmoidItem {
         var xhr = new XMLHttpRequest()
         xhr.open("GET", "https://freeipapi.com/api/json")
         xhr.onreadystatechange = function() {
-            if (xhr.readyState === XMLHttpRequest.DONE) {
+            if (xhr.readyState === 4) {
                 if (xhr.status === 200) {
                     try {
                         var res = JSON.parse(xhr.responseText)
@@ -157,7 +157,7 @@ PlasmoidItem {
         var xhr = new XMLHttpRequest()
         xhr.open("GET", "https://ipapi.co/json/")
         xhr.onreadystatechange = function() {
-            if (xhr.readyState === XMLHttpRequest.DONE) {
+            if (xhr.readyState === 4) {
                 if (xhr.status === 200) {
                     try {
                         var res = JSON.parse(xhr.responseText)
@@ -245,11 +245,11 @@ PlasmoidItem {
                 root.vpWidth = Math.round(radarMap.width)
                 root.vpHeight = Math.round(radarMap.height)
 
-                // Save coordinate bounds of the new image to anchor it geographically
-                root.imgLatMin = root.vpLatMin
-                root.imgLatMax = root.vpLatMax
-                root.imgLonMin = root.vpLonMin
-                root.imgLonMax = root.vpLonMax
+                // Reset the drag translation offset for the overlay
+                if (typeof overlayTranslate !== "undefined") {
+                    overlayTranslate.x = 0
+                    overlayTranslate.y = 0
+                }
 
                 root.radarGeneration++
             }
@@ -358,6 +358,10 @@ PlasmoidItem {
                                     var dx = mouse.x - lastX
                                     var dy = mouse.y - lastY
                                     radarMap.pan(-dx, -dy)
+                                    if (typeof overlayTranslate !== "undefined") {
+                                        overlayTranslate.x += dx
+                                        overlayTranslate.y += dy
+                                    }
                                     lastX = mouse.x
                                     lastY = mouse.y
                                 }
@@ -409,24 +413,50 @@ PlasmoidItem {
                     // ── Radar overlay ──
                     Image {
                         id: radarOverlay
+                        anchors.fill: radarMap
+                        anchors.margins: 1
                         fillMode: Image.Stretch
                         opacity: 0.75
                         source: root.radarUrl()
-                        cache: false
+                        cache: true
                         asynchronous: true
                         z: 10
 
-                        // Bind dimensions to geographical coordinates to keep it pinned to the map
-                        property var tlPoint: radarMap ? radarMap.fromCoordinate(QtPositioning.coordinate(root.imgLatMax, root.imgLonMin)) : null
-                        property var brPoint: radarMap ? radarMap.fromCoordinate(QtPositioning.coordinate(root.imgLatMin, root.imgLonMax)) : null
-
-                        x: tlPoint ? tlPoint.x : 0
-                        y: tlPoint ? tlPoint.y : 0
-                        width: (tlPoint && brPoint) ? (brPoint.x - tlPoint.x) : parent.width
-                        height: (tlPoint && brPoint) ? (brPoint.y - tlPoint.y) : parent.height
+                        transform: Translate {
+                            id: overlayTranslate
+                            x: 0
+                            y: 0
+                        }
 
                         onStatusChanged: {
                             root.loading = (status === Image.Loading)
+                        }
+                    }
+
+                    // ── Frame Preloader (loads all frames in the background for instant sliding/play) ──
+                    Repeater {
+                        model: root.frameTimes.length
+
+                        Image {
+                            width: 1; height: 1
+                            visible: false
+                            cache: true
+                            asynchronous: true
+                            source: {
+                                if (root.frameTimes.length === 0) return ""
+                                var t = root.frameTimes[index]
+                                if (!t) return ""
+
+                                return root.wmsBase
+                                    + "?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap"
+                                    + "&LAYERS=" + root.wmsLayer
+                                    + "&STYLES=&CRS=EPSG:4326"
+                                    + "&BBOX=" + root.vpLatMin + "," + root.vpLonMin + "," + root.vpLatMax + "," + root.vpLonMax
+                                    + "&WIDTH=" + root.vpWidth + "&HEIGHT=" + root.vpHeight
+                                    + "&FORMAT=image/png&TRANSPARENT=TRUE"
+                                    + "&TIME=" + root.isoTime(t)
+                                    + "&_g=" + root.radarGeneration
+                            }
                         }
                     }
 
@@ -557,8 +587,8 @@ PlasmoidItem {
                     // ── Loading indicator ──
                     BusyIndicator {
                         anchors.centerIn: parent
-                        running: root.loading
-                        visible: root.loading
+                        running: root.loading && !playback.running
+                        visible: running
                         z: 30
                     }
                 }
