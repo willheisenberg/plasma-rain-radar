@@ -30,11 +30,19 @@ cd plasma-rain-radar
 kpackagetool6 -t Plasma/Applet -u .
 ```
 
-## Plasma neu starten (dein Setup)
+## Plasma neu starten
+
+Klassisch im Terminal:
 
 ```bash
 kquitapp6 plasmashell
 plasmashell --replace &
+```
+
+Oder via `systemctl` (moderner User-Space-Weg):
+
+```bash
+systemctl --user restart plasma-plasmashell.service
 ```
 
 ## WMS-Konfiguration (optional)

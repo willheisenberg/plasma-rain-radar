@@ -23,6 +23,22 @@ PlasmoidItem {
     property var frameTimes: []        // Array of JS Date objects
     property int radarGeneration: 0    // bumped to force Image reload
 
+    // ── GPS/Location Service ──
+    PositionSource {
+        id: positionSource
+        updateInterval: 10000 // every 10 seconds
+        active: true
+    }
+
+    // ── Fallback IP Geolocation ──
+    property real ipLatitude: 0
+    property real ipLongitude: 0
+    property bool ipLocationValid: false
+
+    readonly property var userCoordinate: (positionSource.position.coordinate.isValid)
+        ? positionSource.position.coordinate
+        : (ipLocationValid ? QtPositioning.coordinate(ipLatitude, ipLongitude) : null)
+
     // ── Viewport state (set by the Map when visible) ──
     property real vpLatMin: 47.0
     property real vpLatMax: 55.5
@@ -30,6 +46,12 @@ PlasmoidItem {
     property real vpLonMax: 15.5
     property int vpWidth: 550
     property int vpHeight: 420
+
+    // ── Bounding box of the currently displayed WMS image ──
+    property real imgLatMin: 47.0
+    property real imgLatMax: 55.5
+    property real imgLonMin: 5.5
+    property real imgLonMax: 15.5
 
     Plasmoid.icon: "weather-showers-scattered"
     Plasmoid.title: "DWD Regenradar"
@@ -103,7 +125,62 @@ PlasmoidItem {
             + "&LAYER=" + wmsLayer
     }
 
-    Component.onCompleted: buildFrameTimes()
+    function fetchIpLocation() {
+        var xhr = new XMLHttpRequest()
+        xhr.open("GET", "https://freeipapi.com/api/json")
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === XMLHttpRequest.DONE) {
+                if (xhr.status === 200) {
+                    try {
+                        var res = JSON.parse(xhr.responseText)
+                        var lat = res.latitude
+                        var lon = res.longitude
+                        if (typeof lat === "number" && typeof lon === "number") {
+                            root.ipLatitude = lat
+                            root.ipLongitude = lon
+                            root.ipLocationValid = true
+                            return
+                        }
+                    } catch (e) {
+                        console.log("Error parsing freeipapi:", e)
+                    }
+                }
+                
+                // Fallback to ipapi.co if freeipapi fails or returns invalid coordinates
+                fetchIpLocationFallback()
+            }
+        }
+        xhr.send()
+    }
+
+    function fetchIpLocationFallback() {
+        var xhr = new XMLHttpRequest()
+        xhr.open("GET", "https://ipapi.co/json/")
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === XMLHttpRequest.DONE) {
+                if (xhr.status === 200) {
+                    try {
+                        var res = JSON.parse(xhr.responseText)
+                        var lat = res.latitude
+                        var lon = res.longitude
+                        if (typeof lat === "number" && typeof lon === "number") {
+                            root.ipLatitude = lat
+                            root.ipLongitude = lon
+                            root.ipLocationValid = true
+                        }
+                    } catch (e) {
+                        console.log("Error parsing ipapi.co:", e)
+                    }
+                }
+            }
+        }
+        xhr.send()
+    }
+
+    Component.onCompleted: {
+        buildFrameTimes()
+        fetchIpLocation()
+    }
 
     Timer {
         id: autoRefresh
@@ -167,6 +244,13 @@ PlasmoidItem {
                 root.vpLonMax = Math.max(tl.longitude, br.longitude)
                 root.vpWidth = Math.round(radarMap.width)
                 root.vpHeight = Math.round(radarMap.height)
+
+                // Save coordinate bounds of the new image to anchor it geographically
+                root.imgLatMin = root.vpLatMin
+                root.imgLatMax = root.vpLatMax
+                root.imgLonMin = root.vpLonMin
+                root.imgLonMax = root.vpLonMax
+
                 root.radarGeneration++
             }
 
@@ -255,28 +339,91 @@ PlasmoidItem {
                             onTriggered: syncViewport()
                         }
 
-                        WheelHandler {
-                            onWheel: function(event) {
-                                var delta = event.angleDelta.y / 120
+                        // Drag/Pan interaction
+                        MouseArea {
+                            id: mapDragArea
+                            anchors.fill: parent
+                            property int lastX: 0
+                            property int lastY: 0
+
+                            cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+
+                            onPressed: function(mouse) {
+                                lastX = mouse.x
+                                lastY = mouse.y
+                            }
+
+                            onPositionChanged: function(mouse) {
+                                if (pressed) {
+                                    var dx = mouse.x - lastX
+                                    var dy = mouse.y - lastY
+                                    radarMap.pan(-dx, -dy)
+                                    lastX = mouse.x
+                                    lastY = mouse.y
+                                }
+                            }
+
+                            onDoubleClicked: function(mouse) {
+                                var coord = radarMap.toCoordinate(Qt.point(mouse.x, mouse.y))
+                                if (coord.isValid) {
+                                    radarMap.center = coord
+                                    radarMap.zoomLevel = Math.min(radarMap.maximumZoomLevel, radarMap.zoomLevel + 1)
+                                }
+                            }
+
+                            onWheel: function(wheel) {
+                                var delta = wheel.angleDelta.y / 120
                                 radarMap.zoomLevel = Math.max(
                                     radarMap.minimumZoomLevel,
                                     Math.min(radarMap.maximumZoomLevel,
                                              radarMap.zoomLevel + delta * 0.5))
+                                wheel.accepted = true
                             }
+                        }
+
+                        // User Location Marker
+                        MapQuickItem {
+                            id: userLocationMarker
+                            coordinate: root.userCoordinate !== null ? root.userCoordinate : QtPositioning.coordinate(0, 0)
+                            visible: root.userCoordinate !== null && root.userCoordinate.isValid
+                            
+                            sourceItem: Rectangle {
+                                width: 14
+                                height: 14
+                                color: "#3b82f6" // Vibrant blue
+                                radius: 7
+                                border.color: "white"
+                                border.width: 2
+                                
+                                SequentialAnimation on scale {
+                                    loops: Animation.Infinite
+                                    PropertyAnimation { to: 1.4; duration: 1200; easing.type: Easing.InOutQuad }
+                                    PropertyAnimation { to: 1.0; duration: 1200; easing.type: Easing.InOutQuad }
+                                }
+                            }
+                            
+                            anchorPoint: Qt.point(7, 7)
                         }
                     }
 
                     // ── Radar overlay ──
                     Image {
                         id: radarOverlay
-                        anchors.fill: radarMap
-                        anchors.margins: 1
                         fillMode: Image.Stretch
                         opacity: 0.75
                         source: root.radarUrl()
                         cache: false
                         asynchronous: true
                         z: 10
+
+                        // Bind dimensions to geographical coordinates to keep it pinned to the map
+                        property var tlPoint: radarMap ? radarMap.fromCoordinate(QtPositioning.coordinate(root.imgLatMax, root.imgLonMin)) : null
+                        property var brPoint: radarMap ? radarMap.fromCoordinate(QtPositioning.coordinate(root.imgLatMin, root.imgLonMax)) : null
+
+                        x: tlPoint ? tlPoint.x : 0
+                        y: tlPoint ? tlPoint.y : 0
+                        width: (tlPoint && brPoint) ? (brPoint.x - tlPoint.x) : parent.width
+                        height: (tlPoint && brPoint) ? (brPoint.y - tlPoint.y) : parent.height
 
                         onStatusChanged: {
                             root.loading = (status === Image.Loading)
@@ -386,6 +533,24 @@ PlasmoidItem {
                             font.bold: true
                             onClicked: radarMap.zoomLevel = Math.max(
                                 radarMap.minimumZoomLevel, radarMap.zoomLevel - 1)
+                        }
+
+                        Button {
+                            width: 32; height: 32
+                            text: "🎯"
+                            font.pixelSize: 14
+                            property bool hasLocation: root.userCoordinate !== null && root.userCoordinate.isValid
+                            opacity: hasLocation ? 1.0 : 0.5
+                            ToolTip.visible: hovered
+                            ToolTip.text: hasLocation 
+                                ? "Zum eigenen Standort springen" 
+                                : "Suche eigenen Standort..."
+                            onClicked: {
+                                if (hasLocation) {
+                                    radarMap.center = root.userCoordinate
+                                    radarMap.zoomLevel = 9
+                                }
+                            }
                         }
                     }
 
