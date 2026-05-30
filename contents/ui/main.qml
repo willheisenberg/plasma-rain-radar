@@ -99,7 +99,7 @@ PlasmoidItem {
         return day + ", " + dd + "." + mm + ". " + hh + ":" + min
     }
 
-    // Build WMS GetMap URL using the stored viewport
+    // Build WMS GetMap URL for the fixed Germany bounding box
     function radarUrl() {
         if (frameTimes.length === 0) return ""
         var t = frameTimes[frameIndex]
@@ -109,8 +109,8 @@ PlasmoidItem {
             + "?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap"
             + "&LAYERS=" + wmsLayer
             + "&STYLES=&CRS=EPSG:4326"
-            + "&BBOX=" + vpLatMin + "," + vpLonMin + "," + vpLatMax + "," + vpLonMax
-            + "&WIDTH=" + vpWidth + "&HEIGHT=" + vpHeight
+            + "&BBOX=45.0,2.0,56.5,19.0"
+            + "&WIDTH=800&HEIGHT=860"
             + "&FORMAT=image/png&TRANSPARENT=TRUE"
             + "&TIME=" + isoTime(t)
             + "&_g=" + radarGeneration
@@ -251,12 +251,6 @@ PlasmoidItem {
                 root.vpWidth = Math.round(radarMap.width)
                 root.vpHeight = Math.round(radarMap.height)
 
-                // Reset the drag translation offset for the overlay
-                if (typeof overlayTranslate !== "undefined") {
-                    overlayTranslate.x = 0
-                    overlayTranslate.y = 0
-                }
-
                 root.radarGeneration++
             }
 
@@ -328,21 +322,9 @@ PlasmoidItem {
                         minimumZoomLevel: 5
                         maximumZoomLevel: 12
 
-                        onCenterChanged: viewportReloadDelay.restart()
-                        onZoomLevelChanged: viewportReloadDelay.restart()
-
                         Component.onCompleted: {
                             // Initial viewport sync after map is rendered
                             Qt.callLater(syncViewport)
-                        }
-
-                        onWidthChanged: viewportReloadDelay.restart()
-                        onHeightChanged: viewportReloadDelay.restart()
-
-                        Timer {
-                            id: viewportReloadDelay
-                            interval: 350
-                            onTriggered: syncViewport()
                         }
 
                         // Drag/Pan interaction
@@ -364,10 +346,6 @@ PlasmoidItem {
                                     var dx = mouse.x - lastX
                                     var dy = mouse.y - lastY
                                     radarMap.pan(-dx, -dy)
-                                    if (typeof overlayTranslate !== "undefined") {
-                                        overlayTranslate.x += dx
-                                        overlayTranslate.y += dy
-                                    }
                                     lastX = mouse.x
                                     lastY = mouse.y
                                 }
@@ -414,28 +392,29 @@ PlasmoidItem {
                             
                             anchorPoint: Qt.point(7, 7)
                         }
-                    }
 
-                    // ── Radar overlay ──
-                    Image {
-                        id: radarOverlay
-                        anchors.fill: radarMap
-                        anchors.margins: 1
-                        fillMode: Image.Stretch
-                        opacity: 0.75
-                        source: root.radarUrl()
-                        cache: true
-                        asynchronous: true
-                        z: 10
+                        // Natively lock the WMS image geographically to the map
+                        MapQuickItem {
+                            id: radarOverlayItem
+                            coordinate: QtPositioning.coordinate(50.75, 10.5)
+                            zoomLevel: 6
+                            anchorPoint: Qt.point(387, 417.5)
+                            z: 10
 
-                        transform: Translate {
-                            id: overlayTranslate
-                            x: 0
-                            y: 0
-                        }
+                            sourceItem: Image {
+                                id: radarOverlay
+                                width: 774
+                                height: 835
+                                fillMode: Image.Stretch
+                                opacity: 0.75
+                                source: root.radarUrl()
+                                cache: true
+                                asynchronous: true
 
-                        onStatusChanged: {
-                            root.loading = (status === Image.Loading)
+                                onStatusChanged: {
+                                    root.loading = (status === Image.Loading)
+                                }
+                            }
                         }
                     }
 
@@ -457,8 +436,8 @@ PlasmoidItem {
                                     + "?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap"
                                     + "&LAYERS=" + root.wmsLayer
                                     + "&STYLES=&CRS=EPSG:4326"
-                                    + "&BBOX=" + root.vpLatMin + "," + root.vpLonMin + "," + root.vpLatMax + "," + root.vpLonMax
-                                    + "&WIDTH=" + root.vpWidth + "&HEIGHT=" + root.vpHeight
+                                    + "&BBOX=45.0,2.0,56.5,19.0"
+                                    + "&WIDTH=800&HEIGHT=860"
                                     + "&FORMAT=image/png&TRANSPARENT=TRUE"
                                     + "&TIME=" + root.isoTime(t)
                                     + "&_g=" + root.radarGeneration
