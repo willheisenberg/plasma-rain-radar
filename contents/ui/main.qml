@@ -99,7 +99,7 @@ PlasmoidItem {
         return day + ", " + dd + "." + mm + ". " + hh + ":" + min
     }
 
-    // Build WMS GetMap URL for the fixed Germany bounding box
+    // Build WMS GetMap URL for the fixed Germany bounding box (Web Mercator EPSG:3857)
     function radarUrl() {
         if (frameTimes.length === 0) return ""
         var t = frameTimes[frameIndex]
@@ -108,9 +108,9 @@ PlasmoidItem {
         var url = wmsBase
             + "?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap"
             + "&LAYERS=" + wmsLayer
-            + "&STYLES=&CRS=EPSG:4326"
-            + "&BBOX=45.0,2.0,56.5,19.0"
-            + "&WIDTH=800&HEIGHT=860"
+            + "&STYLES=&CRS=EPSG:3857"
+            + "&BBOX=222638.98,5621521.49,2115070.32,7673967.65"
+            + "&WIDTH=800&HEIGHT=868"
             + "&FORMAT=image/png&TRANSPARENT=TRUE"
             + "&TIME=" + isoTime(t)
             + "&_g=" + radarGeneration
@@ -393,18 +393,18 @@ PlasmoidItem {
                             anchorPoint: Qt.point(7, 7)
                         }
 
-                        // Natively lock the WMS image geographically to the map
+                        // Natively lock the WMS image geographically to the map (perfect Web Mercator alignment)
                         MapQuickItem {
                             id: radarOverlayItem
-                            coordinate: QtPositioning.coordinate(50.75, 10.5)
+                            coordinate: QtPositioning.coordinate(51.18, 10.5)
                             zoomLevel: 6
-                            anchorPoint: Qt.point(387, 417.5)
+                            anchorPoint: Qt.point(387, 420)
                             z: 10
 
                             sourceItem: Image {
                                 id: radarOverlay
                                 width: 774
-                                height: 835
+                                height: 840
                                 fillMode: Image.Stretch
                                 opacity: 0.75
                                 source: root.radarUrl()
@@ -435,9 +435,9 @@ PlasmoidItem {
                                 return root.wmsBase
                                     + "?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap"
                                     + "&LAYERS=" + root.wmsLayer
-                                    + "&STYLES=&CRS=EPSG:4326"
-                                    + "&BBOX=45.0,2.0,56.5,19.0"
-                                    + "&WIDTH=800&HEIGHT=860"
+                                    + "&STYLES=&CRS=EPSG:3857"
+                                    + "&BBOX=222638.98,5621521.49,2115070.32,7673967.65"
+                                    + "&WIDTH=800&HEIGHT=868"
                                     + "&FORMAT=image/png&TRANSPARENT=TRUE"
                                     + "&TIME=" + root.isoTime(t)
                                     + "&_g=" + root.radarGeneration
