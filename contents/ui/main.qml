@@ -555,8 +555,7 @@ PlasmoidItem {
 
                         Button {
                             width: 32; height: 32
-                            text: "🎯"
-                            font.pixelSize: 14
+                            icon.name: "mark-location"
                             property bool hasLocation: root.userCoordinate !== null && root.userCoordinate.isValid
                             opacity: hasLocation ? 1.0 : 0.5
                             ToolTip.visible: hovered
