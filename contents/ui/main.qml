@@ -491,24 +491,27 @@ PlasmoidItem {
 
                     // ── Legend (bottom-right) ──
                     Rectangle {
+                        id: legendContainer
                         anchors.bottom: parent.bottom
                         anchors.right: parent.right
-                        anchors.margins: 10
+                        anchors.margins: Math.round(10 * legendScale)
                         color: "#cc1a1a2e"
-                        radius: 6
-                        width: legendCol.implicitWidth + 12
-                        height: legendCol.implicitHeight + 12
+                        radius: Math.round(6 * legendScale)
+                        width: legendCol.implicitWidth + Math.round(12 * legendScale)
+                        height: legendCol.implicitHeight + Math.round(12 * legendScale)
                         z: 20
+
+                        readonly property real legendScale: Math.max(2.0, Math.min(3.5, (parent.height / 520.0) * 2.0))
 
                         Column {
                             id: legendCol
                             anchors.centerIn: parent
-                            spacing: 4
+                            spacing: Math.round(4 * legendContainer.legendScale)
 
                             Label {
                                 text: "mm/h"
                                 color: "#b0b8c4"
-                                font.pixelSize: 10
+                                font.pixelSize: Math.round(10 * legendContainer.legendScale)
                                 font.bold: true
                                 horizontalAlignment: Text.AlignHCenter
                                 anchors.horizontalCenter: parent.horizontalCenter
@@ -516,7 +519,7 @@ PlasmoidItem {
 
                             Image {
                                 source: root.legendUrl()
-                                width: 28
+                                width: Math.round(28 * legendContainer.legendScale)
                                 fillMode: Image.PreserveAspectFit
                                 cache: true
                                 asynchronous: true
