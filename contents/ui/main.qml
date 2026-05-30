@@ -182,6 +182,12 @@ PlasmoidItem {
         fetchIpLocation()
     }
 
+    onExpandedChanged: {
+        if (!expanded) {
+            playback.running = false
+        }
+    }
+
     Timer {
         id: autoRefresh
         interval: 5 * 60 * 1000
