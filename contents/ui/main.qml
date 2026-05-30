@@ -19,7 +19,7 @@ PlasmoidItem {
     // ── State ──
     property int frameIndex: 0
     property bool loading: false
-    property bool showForecast: false  // false = past, true = future
+    property bool showForecast: true  // false = past, true = future
     property var frameTimes: []        // Array of JS Date objects
     property int radarGeneration: 0    // bumped to force Image reload
 
