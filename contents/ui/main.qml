@@ -13,7 +13,7 @@ PlasmoidItem {
     // ── WMS Configuration ──
     readonly property string wmsBase: "https://maps.dwd.de/geoserver/ows"
     readonly property string wmsLayer: "dwd:Niederschlagsradar"
-    readonly property int maxFrames: 12
+    readonly property int maxFrames: 24
     readonly property int stepMinutes: 5
 
     // ── State ──
