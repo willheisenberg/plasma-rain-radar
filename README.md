@@ -1,5 +1,9 @@
 # DWD Regenradar Plasmoid
 
+<p align="center">
+  <img src="contents/images/preview.png" width="180" alt="DWD Regenradar Logo">
+</p>
+
 KDE-Plasma-Widget (Plasma 6) fuer die Anzeige des DWD-Niederschlagsradars mit interaktiver Karte.
 
 ## Features
