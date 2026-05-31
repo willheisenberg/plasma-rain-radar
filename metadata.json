@@ -10,7 +10,7 @@
     "Category": "Online Services",
     "Description": "Zeigt die aktuelle Regenentwicklung aus DWD-Radar-Daten im Panel-Popup.",
     "EnabledByDefault": true,
-    "Icon": "weather-showers-scattered",
+    "Icon": "plasma-rain-radar",
     "Id": "org.example.plasmoid.rainradar",
     "License": "MIT",
     "Name": "DWD Regenradar",

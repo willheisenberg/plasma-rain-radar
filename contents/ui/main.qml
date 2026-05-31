@@ -53,7 +53,7 @@ PlasmoidItem {
     property real imgLonMin: 5.5
     property real imgLonMax: 15.5
 
-    Plasmoid.icon: "weather-showers-scattered"
+    Plasmoid.icon: Qt.resolvedUrl("../images/plasma-rain-radar.svg").toString()
     Plasmoid.title: "DWD Regenradar"
     compactRepresentation: compact
     fullRepresentation: full
@@ -213,7 +213,7 @@ PlasmoidItem {
         id: compact
 
         Kirigami.Icon {
-            source: "weather-showers-scattered"
+            source: Qt.resolvedUrl("../images/plasma-rain-radar.svg")
             opacity: compactMouse.containsMouse ? 1.0 : 0.9
 
             MouseArea {
