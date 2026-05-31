@@ -286,7 +286,7 @@ PlasmoidItem {
                     }
 
                     Button {
-                        text: "⟳"
+                        icon.name: "view-refresh"
                         flat: true
                         onClicked: root.buildFrameTimes()
                         ToolTip.visible: hovered
