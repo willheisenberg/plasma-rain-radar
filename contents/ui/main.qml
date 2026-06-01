@@ -18,7 +18,17 @@ PlasmoidItem {
 
     // ── State ──
     property int frameIndex: 0
-    property bool loading: false
+    property var loadingStates: ({})
+    property bool loading: {
+        if (frameTimes.length === 0) return false
+        for (var i = 0; i < frameTimes.length; i++) {
+            var s = loadingStates[i]
+            if (s !== "Ready" && s !== "Error") {
+                return true
+            }
+        }
+        return false
+    }
     property bool showForecast: true  // false = past, true = future
     property var frameTimes: []        // Array of JS Date objects
     property int radarGeneration: 0    // bumped to force Image reload
@@ -66,6 +76,7 @@ PlasmoidItem {
     }
 
     function buildFrameTimes() {
+        playback.running = false
         var now = Math.floor(Date.now() / 1000)
         var base = roundEpoch(now)
         var arr = []
@@ -80,6 +91,7 @@ PlasmoidItem {
         }
         frameTimes = arr
         frameIndex = showForecast ? 0 : maxFrames - 1
+        loadingStates = {}
         radarGeneration++
     }
 
@@ -99,24 +111,6 @@ PlasmoidItem {
         return day + ", " + dd + "." + mm + ". " + hh + ":" + min
     }
 
-    // Build WMS GetMap URL for the fixed Germany bounding box (Web Mercator EPSG:3857)
-    function radarUrl() {
-        if (frameTimes.length === 0) return ""
-        var t = frameTimes[frameIndex]
-        if (!t) return ""
-
-        var url = wmsBase
-            + "?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap"
-            + "&LAYERS=" + wmsLayer
-            + "&STYLES=&CRS=EPSG:3857"
-            + "&BBOX=222638.98,5621521.49,2115070.32,7673967.65"
-            + "&WIDTH=800&HEIGHT=868"
-            + "&FORMAT=image/png&TRANSPARENT=TRUE"
-            + "&TIME=" + isoTime(t)
-            + "&_g=" + radarGeneration
-
-        return url
-    }
 
     function legendUrl() {
         return wmsBase
@@ -250,8 +244,6 @@ PlasmoidItem {
                 root.vpLonMax = Math.max(tl.longitude, br.longitude)
                 root.vpWidth = Math.round(radarMap.width)
                 root.vpHeight = Math.round(radarMap.height)
-
-                root.radarGeneration++
             }
 
             ColumnLayout {
@@ -401,49 +393,53 @@ PlasmoidItem {
                             anchorPoint: Qt.point(387, 420)
                             z: 10
 
-                            sourceItem: Image {
-                                id: radarOverlay
+                            sourceItem: Item {
                                 width: 774
                                 height: 840
-                                fillMode: Image.Stretch
-                                opacity: 0.75
-                                source: root.radarUrl()
-                                cache: true
-                                asynchronous: true
 
-                                onStatusChanged: {
-                                    root.loading = (status === Image.Loading)
+                                Repeater {
+                                    model: root.frameTimes.length
+
+                                    Image {
+                                        id: overlayImg
+                                        anchors.fill: parent
+                                        fillMode: Image.Stretch
+                                        opacity: index === root.frameIndex ? 0.75 : 0.001
+                                        cache: true
+                                        asynchronous: true
+                                        source: {
+                                            if (root.frameTimes.length === 0) return ""
+                                            var t = root.frameTimes[index]
+                                            if (!t) return ""
+
+                                            return root.wmsBase
+                                                + "?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap"
+                                                + "&LAYERS=" + root.wmsLayer
+                                                + "&STYLES=&CRS=EPSG:3857"
+                                                + "&BBOX=222638.98,5621521.49,2115070.32,7673967.65"
+                                                + "&WIDTH=800&HEIGHT=868"
+                                                + "&FORMAT=image/png&TRANSPARENT=TRUE"
+                                                + "&TIME=" + root.isoTime(t)
+                                                + "&_g=" + root.radarGeneration
+                                        }
+
+                                        onStatusChanged: {
+                                            var states = Object.assign({}, root.loadingStates)
+                                            if (status === Image.Ready) {
+                                                states[index] = "Ready"
+                                            } else if (status === Image.Error) {
+                                                states[index] = "Error"
+                                            } else {
+                                                states[index] = "Loading"
+                                            }
+                                            root.loadingStates = states
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
 
-                    // ── Frame Preloader (loads all frames in the background for instant sliding/play) ──
-                    Repeater {
-                        model: root.frameTimes.length
-
-                        Image {
-                            width: 1; height: 1
-                            visible: false
-                            cache: true
-                            asynchronous: true
-                            source: {
-                                if (root.frameTimes.length === 0) return ""
-                                var t = root.frameTimes[index]
-                                if (!t) return ""
-
-                                return root.wmsBase
-                                    + "?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap"
-                                    + "&LAYERS=" + root.wmsLayer
-                                    + "&STYLES=&CRS=EPSG:3857"
-                                    + "&BBOX=222638.98,5621521.49,2115070.32,7673967.65"
-                                    + "&WIDTH=800&HEIGHT=868"
-                                    + "&FORMAT=image/png&TRANSPARENT=TRUE"
-                                    + "&TIME=" + root.isoTime(t)
-                                    + "&_g=" + root.radarGeneration
-                            }
-                        }
-                    }
 
                     // ── Time display (top-left) ──
                     Rectangle {
@@ -571,12 +567,60 @@ PlasmoidItem {
                         }
                     }
 
-                    // ── Loading indicator ──
-                    BusyIndicator {
-                        anchors.centerIn: parent
-                        running: root.loading && !playback.running
-                        visible: running
+                    // ── Loading overlay (grayed-out background + large loading indicator) ──
+                    Rectangle {
+                        anchors.fill: parent
+                        color: "#cc0c101a" // Beautiful semi-transparent dark blue/gray
+                        opacity: (root.loading && !playback.running) ? 1.0 : 0.0
+                        visible: opacity > 0.0
                         z: 30
+
+                        Behavior on opacity {
+                            NumberAnimation { duration: 250; easing.type: Easing.InOutQuad }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            preventStealing: true
+                            onPressed: function(mouse) {}
+                            onClicked: function(mouse) {}
+                        }
+
+                        Column {
+                            anchors.centerIn: parent
+                            spacing: 14
+
+                            BusyIndicator {
+                                implicitWidth: 64
+                                implicitHeight: 64
+                                running: parent.parent.visible
+                                anchors.horizontalCenter: parent.horizontalCenter
+                            }
+
+                            Label {
+                                text: "Wetterdaten werden geladen..."
+                                color: "#e8eaed"
+                                font.bold: true
+                                font.pixelSize: 14
+                                anchors.horizontalCenter: parent.horizontalCenter
+                            }
+
+                            Label {
+                                text: {
+                                    var readyCount = 0
+                                    for (var i = 0; i < root.frameTimes.length; i++) {
+                                        var s = root.loadingStates[i]
+                                        if (s === "Ready" || s === "Error") {
+                                            readyCount++
+                                        }
+                                    }
+                                    return readyCount + " von " + root.frameTimes.length + " Bildern geladen"
+                                }
+                                color: "#b0b8c4"
+                                font.pixelSize: 11
+                                anchors.horizontalCenter: parent.horizontalCenter
+                            }
+                        }
                     }
                 }
 
