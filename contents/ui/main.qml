@@ -29,6 +29,18 @@ PlasmoidItem {
         }
         return false
     }
+    property bool initialLoading: {
+        if (frameTimes.length === 0) return true
+        var readyCount = 0
+        for (var i = 0; i < frameTimes.length; i++) {
+            var s = loadingStates[i]
+            if (s === "Ready" || s === "Error") {
+                readyCount++
+            }
+        }
+        // Show loading screen only if we have less than half of the frames loaded (initial fetch)
+        return readyCount < 12
+    }
     property bool showForecast: true  // false = past, true = future
     property var frameTimes: []        // Array of JS Date objects
     property int radarGeneration: 0    // bumped to force Image reload
@@ -75,28 +87,10 @@ PlasmoidItem {
         return Math.floor(epoch / step) * step
     }
 
-    function getDisplayIndex(currentIndex, states) {
-        if (!states) return currentIndex
-        if (states[currentIndex] === "Ready") {
-            return currentIndex
+    function buildFrameTimes(forceReload) {
+        if (forceReload === undefined) {
+            forceReload = true
         }
-        // Search backwards for the nearest ready frame
-        for (var i = currentIndex - 1; i >= 0; i--) {
-            if (states[i] === "Ready") {
-                return i
-            }
-        }
-        // If none found backwards, search forwards
-        for (var j = currentIndex + 1; j < frameTimes.length; j++) {
-            if (states[j] === "Ready") {
-                return j
-            }
-        }
-        return currentIndex
-    }
-
-    function buildFrameTimes() {
-        playback.running = false
         // Subtract a safety margin of 10 minutes (600 seconds) to account for DWD server-side processing delays.
         // This prevents requesting the very latest frame before it is actually published on the server.
         var now = Math.floor(Date.now() / 1000) - 600
@@ -113,8 +107,12 @@ PlasmoidItem {
         }
         frameTimes = arr
         frameIndex = showForecast ? 0 : maxFrames - 1
-        loadingStates = {}
-        radarGeneration++
+        
+        if (forceReload) {
+            playback.running = false
+            loadingStates = {}
+            radarGeneration++
+        }
     }
 
     function isoTime(d) {
@@ -199,7 +197,9 @@ PlasmoidItem {
     }
 
     onExpandedChanged: {
-        if (!expanded) {
+        if (expanded) {
+            buildFrameTimes(false) // Smoothly update time window when expanded using cache
+        } else {
             playback.running = false
         }
     }
@@ -209,7 +209,7 @@ PlasmoidItem {
         interval: 5 * 60 * 1000
         running: true
         repeat: true
-        onTriggered: buildFrameTimes()
+        onTriggered: buildFrameTimes(false) // Auto-refresh does not clear cache, it just shifts the window.
     }
 
     Timer {
@@ -246,10 +246,52 @@ PlasmoidItem {
         id: full
 
         Item {
+            id: fullRoot
             Layout.minimumWidth: 550
             Layout.minimumHeight: 480
             Layout.preferredWidth: 600
             Layout.preferredHeight: 520
+
+            property int displayIndex: root.frameIndex
+
+            function updateDisplayIndex() {
+                var target = root.frameIndex
+                if (isImageReady(target)) {
+                    displayIndex = target
+                    return
+                }
+                // Search backwards for the nearest ready frame
+                for (var i = target - 1; i >= 0; i--) {
+                    if (isImageReady(i)) {
+                        displayIndex = i
+                        return
+                    }
+                }
+                // If none found backwards, search forwards
+                for (var j = target + 1; j < root.frameTimes.length; j++) {
+                    if (isImageReady(j)) {
+                        displayIndex = j
+                        return
+                    }
+                }
+                displayIndex = target
+            }
+
+            function isImageReady(idx) {
+                if (!imgRepeater) return false
+                var item = imgRepeater.itemAt(idx)
+                return item && item.status === Image.Ready
+            }
+
+            Connections {
+                target: root
+                function onFrameIndexChanged() {
+                    fullRoot.updateDisplayIndex()
+                }
+                function onFrameTimesChanged() {
+                    fullRoot.updateDisplayIndex()
+                }
+            }
 
             // Sync viewport from map to root properties
             function syncViewport() {
@@ -291,7 +333,7 @@ PlasmoidItem {
                         flat: true
                         onClicked: {
                             root.showForecast = !root.showForecast
-                            root.buildFrameTimes()
+                            root.buildFrameTimes(true) // Force full reload
                         }
                         ToolTip.visible: hovered
                         ToolTip.text: root.showForecast
@@ -302,7 +344,7 @@ PlasmoidItem {
                     Button {
                         icon.name: "view-refresh"
                         flat: true
-                        onClicked: root.buildFrameTimes()
+                        onClicked: root.buildFrameTimes(true) // Force full reload
                         ToolTip.visible: hovered
                         ToolTip.text: "Daten aktualisieren"
                     }
@@ -420,13 +462,14 @@ PlasmoidItem {
                                 height: 840
 
                                 Repeater {
+                                    id: imgRepeater
                                     model: root.frameTimes.length
 
                                     Image {
                                         id: overlayImg
                                         anchors.fill: parent
                                         fillMode: Image.Stretch
-                                        opacity: index === root.getDisplayIndex(root.frameIndex, root.loadingStates) ? 0.75 : 0.001
+                                        opacity: index === fullRoot.displayIndex ? 0.75 : 0.001
                                         cache: true
                                         asynchronous: true
                                         source: {
@@ -455,6 +498,7 @@ PlasmoidItem {
                                                 states[index] = "Loading"
                                             }
                                             root.loadingStates = states
+                                            fullRoot.updateDisplayIndex()
                                         }
                                     }
                                 }
@@ -593,7 +637,7 @@ PlasmoidItem {
                     Rectangle {
                         anchors.fill: parent
                         color: "#cc0c101a" // Beautiful semi-transparent dark blue/gray
-                        opacity: (root.loading && !playback.running) ? 1.0 : 0.0
+                        opacity: (root.initialLoading && !playback.running) ? 1.0 : 0.0
                         visible: opacity > 0.0
                         z: 30
 
