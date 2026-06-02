@@ -13,7 +13,9 @@ PlasmoidItem {
     // ── WMS Configuration ──
     readonly property string wmsBase: "https://maps.dwd.de/geoserver/ows"
     readonly property string wmsLayer: "dwd:Niederschlagsradar"
-    readonly property int maxFrames: 24
+    readonly property int pastFrames: 36
+    readonly property int futureFrames: 24
+    readonly property int maxFrames: pastFrames + futureFrames
     readonly property int stepMinutes: 5
 
     // ── State ──
@@ -40,9 +42,8 @@ PlasmoidItem {
             }
         }
         // Show loading screen only if we have less than half of the frames loaded (initial fetch)
-        return readyCount < 12
+        return readyCount < 30
     }
-    property bool showForecast: true  // false = past, true = future
     property var frameTimes: []        // Array of JS Date objects
     property int radarGeneration: 0    // bumped to force Image reload
 
@@ -97,13 +98,14 @@ PlasmoidItem {
         var now = Math.floor(Date.now() / 1000) - 600
         var base = roundEpoch(now)
         root.currentBaseTime = base
+        console.log("[RadarDebug] buildFrameTimes: forceReload =", forceReload, "base =", base, "local =", localTimeStr(new Date(base * 1000)))
         var arr = []
         for (var i = 0; i < maxFrames; i++) {
             var ts
-            if (showForecast) {
-                ts = base + i * stepMinutes * 60
+            if (i < pastFrames) {
+                ts = base - (pastFrames - i) * stepMinutes * 60
             } else {
-                ts = base - (maxFrames - 1 - i) * stepMinutes * 60
+                ts = base + (i - pastFrames) * stepMinutes * 60
             }
             arr.push(new Date(ts * 1000))
         }
@@ -111,7 +113,7 @@ PlasmoidItem {
         frameTimes = arr
         
         if (forceReload) {
-            frameIndex = showForecast ? 0 : maxFrames - 1
+            frameIndex = pastFrames // Start at the "Jetzt" frame (index 36)
             playback.running = false
             loadingStates = {}
             radarGeneration++
@@ -341,16 +343,13 @@ PlasmoidItem {
                     Item { Layout.fillWidth: true }
 
                     Button {
-                        text: root.showForecast ? "🔮 Vorhersage" : "⏪ Verlauf"
+                        text: "📍 Jetzt"
                         flat: true
                         onClicked: {
-                            root.showForecast = !root.showForecast
-                            root.buildFrameTimes(true) // Force full reload
+                            root.frameIndex = root.pastFrames
                         }
                         ToolTip.visible: hovered
-                        ToolTip.text: root.showForecast
-                            ? "Zeigt Niederschlagsvorhersage"
-                            : "Zeigt vergangene Daten"
+                        ToolTip.text: "Zur Gegenwart springen"
                     }
 
                     Button {
@@ -547,7 +546,7 @@ PlasmoidItem {
                         anchors.top: parent.top
                         anchors.right: parent.right
                         anchors.margins: 12
-                        color: root.showForecast ? "#cc3b82f6" : "#cc22c55e"
+                        color: root.frameIndex >= root.pastFrames ? "#cc3b82f6" : "#cc22c55e"
                         radius: 6
                         width: modeBadge.implicitWidth + 14
                         height: modeBadge.implicitHeight + 8
@@ -556,7 +555,7 @@ PlasmoidItem {
                         Label {
                             id: modeBadge
                             anchors.centerIn: parent
-                            text: root.showForecast ? "Vorhersage" : "Verlauf"
+                            text: root.frameIndex >= root.pastFrames ? "Vorhersage" : "Verlauf"
                             color: "white"
                             font.pixelSize: 11
                             font.bold: true
@@ -726,6 +725,101 @@ PlasmoidItem {
                         enabled: root.frameTimes.length > 0
                         value: root.frameIndex
                         onMoved: root.frameIndex = Math.round(value)
+
+                        background: Rectangle {
+                            x: frameSlider.leftPadding
+                            y: frameSlider.topPadding + frameSlider.availableHeight / 2 - height / 2
+                            implicitWidth: 200
+                            implicitHeight: 6
+                            width: frameSlider.availableWidth
+                            height: implicitHeight
+                            radius: 3
+                            color: "transparent"
+
+                            // Ratio of the "Jetzt" position (index 36)
+                            readonly property real nowRatio: root.pastFrames / Math.max(1, root.maxFrames - 1)
+                            
+                            // Ratio of the current handle position
+                            readonly property real handleRatio: frameSlider.visualPosition
+
+                            // ── PAST TRACK (Verlauf, Left Half) ──
+                            // Muted past background (Dark Green)
+                            Rectangle {
+                                width: parent.width * parent.nowRatio
+                                height: parent.height
+                                color: "#14532d" // Dark green
+                                radius: 3
+                            }
+
+                            // Active past progress (Vibrant Green)
+                            Rectangle {
+                                width: parent.width * Math.min(parent.nowRatio, parent.handleRatio)
+                                height: parent.height
+                                color: "#22c55e" // Vibrant green
+                                radius: 3
+                            }
+
+                            // ── FUTURE TRACK (Vorhersage, Right Half) ──
+                            // Muted future background (Dark Blue)
+                            Rectangle {
+                                x: parent.width * parent.nowRatio
+                                width: parent.width * (1 - parent.nowRatio)
+                                height: parent.height
+                                color: "#172554" // Dark blue
+                                radius: 3
+                            }
+
+                            // Active future progress (Vibrant Blue)
+                            Rectangle {
+                                x: parent.width * parent.nowRatio
+                                width: parent.width * Math.max(0, parent.handleRatio - parent.nowRatio)
+                                height: parent.height
+                                color: "#3b82f6" // Vibrant blue
+                                radius: 3
+                            }
+
+                            // "Jetzt" marker (thick vertical line at the present time)
+                            Rectangle {
+                                x: parent.width * parent.nowRatio - width / 2
+                                y: -4 // Slightly taller
+                                width: 4
+                                height: parent.height + 8
+                                color: "#ffffff" // White marker
+                                radius: 2
+                                border.color: "#1e293b"
+                                border.width: 1
+
+                                ToolTip.visible: markerMouse.containsMouse
+                                ToolTip.text: "Gegenwart (" + (root.frameTimes.length > root.pastFrames ? root.localTimeStr(root.frameTimes[root.pastFrames]) : "") + ")"
+
+                                MouseArea {
+                                    id: markerMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: root.frameIndex = root.pastFrames
+                                }
+                            }
+                        }
+
+                        handle: Rectangle {
+                            x: frameSlider.leftPadding + frameSlider.visualPosition * (frameSlider.availableWidth - width)
+                            y: frameSlider.topPadding + frameSlider.availableHeight / 2 - height / 2
+                            implicitWidth: 16
+                            implicitHeight: 16
+                            radius: 8
+                            color: frameSlider.pressed ? "#e2e8f0" : "#ffffff"
+                            border.color: "#1e293b"
+                            border.width: 2
+
+                            // Center indicator dot matching the current time context (green = past, blue = future)
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 6
+                                height: 6
+                                radius: 3
+                                color: frameSlider.value >= root.pastFrames ? "#3b82f6" : "#22c55e"
+                            }
+                        }
                     }
 
                     Label {
