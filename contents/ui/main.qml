@@ -18,6 +18,7 @@ PlasmoidItem {
 
     // ── State ──
     property int frameIndex: 0
+    property int currentBaseTime: 0
     property var loadingStates: ({})
     property bool loading: {
         if (frameTimes.length === 0) return false
@@ -95,6 +96,8 @@ PlasmoidItem {
         // This prevents requesting the very latest frame before it is actually published on the server.
         var now = Math.floor(Date.now() / 1000) - 600
         var base = roundEpoch(now)
+        root.currentBaseTime = base
+        console.log("[RadarDebug] buildFrameTimes: forceReload =", forceReload, "base =", base, "local =", localTimeStr(new Date(base * 1000)))
         var arr = []
         for (var i = 0; i < maxFrames; i++) {
             var ts
@@ -105,13 +108,17 @@ PlasmoidItem {
             }
             arr.push(new Date(ts * 1000))
         }
+        var oldIndex = frameIndex
         frameTimes = arr
-        frameIndex = showForecast ? 0 : maxFrames - 1
         
         if (forceReload) {
+            frameIndex = showForecast ? 0 : maxFrames - 1
             playback.running = false
             loadingStates = {}
             radarGeneration++
+        } else {
+            // Shift the index to keep showing the same physical time if possible
+            frameIndex = Math.max(0, oldIndex - 1)
         }
     }
 
@@ -197,7 +204,8 @@ PlasmoidItem {
     }
 
     onExpandedChanged: {
-        if (expanded) {
+        console.log("[RadarDebug] onExpandedChanged: root.expanded =", root.expanded)
+        if (root.expanded) {
             buildFrameTimes(false) // Smoothly update time window when expanded using cache
         } else {
             playback.running = false
@@ -206,10 +214,17 @@ PlasmoidItem {
 
     Timer {
         id: autoRefresh
-        interval: 5 * 60 * 1000
+        interval: 30 * 1000 // Check every 30 seconds
         running: true
         repeat: true
-        onTriggered: buildFrameTimes(false) // Auto-refresh does not clear cache, it just shifts the window.
+        onTriggered: {
+            var now = Math.floor(Date.now() / 1000) - 600
+            var newBase = roundEpoch(now)
+            if (newBase !== root.currentBaseTime) {
+                console.log("[RadarDebug] autoRefresh: time block changed from", root.currentBaseTime, "to", newBase)
+                buildFrameTimes(false)
+            }
+        }
     }
 
     Timer {
