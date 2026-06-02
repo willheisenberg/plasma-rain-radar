@@ -207,6 +207,11 @@ PlasmoidItem {
     onExpandedChanged: {
         if (root.expanded) {
             buildFrameTimes(false) // Smoothly update time window when expanded using cache
+            // Reset map to full radar frame view when opening
+            if (radarMap) {
+                radarMap.zoomLevel = radarMap.minimumZoomLevel
+                radarMap.center = QtPositioning.coordinate(51.1657, 10.4515)
+            }
         } else {
             playback.running = false
         }
@@ -324,6 +329,35 @@ PlasmoidItem {
                 root.vpHeight = Math.round(radarMap.height)
             }
 
+            // Clamp map center so the visible viewport stays within radar BBOX
+            // Radar coverage: lat 45.0–56.576107, lon 2.0–19.0
+            function clampCenter() {
+                if (!radarMap || radarMap.width < 10 || radarMap.height < 10) return
+
+                var tl = radarMap.toCoordinate(Qt.point(0, 0))
+                var br = radarMap.toCoordinate(Qt.point(radarMap.width, radarMap.height))
+                if (!tl.isValid || !br.isValid) return
+
+                var visLatN = Math.max(tl.latitude, br.latitude)
+                var visLatS = Math.min(tl.latitude, br.latitude)
+                var visLonW = Math.min(tl.longitude, br.longitude)
+                var visLonE = Math.max(tl.longitude, br.longitude)
+
+                var c = radarMap.center
+                var lat = c.latitude
+                var lon = c.longitude
+
+                // Clamp: if viewport edge exceeds radar boundary, pull center back
+                if (visLatN > 56.576107) lat -= (visLatN - 56.576107)
+                if (visLatS < 45.0)      lat += (45.0 - visLatS)
+                if (visLonE > 19.0)      lon -= (visLonE - 19.0)
+                if (visLonW < 2.0)       lon += (2.0 - visLonW)
+
+                if (lat !== c.latitude || lon !== c.longitude) {
+                    radarMap.center = QtPositioning.coordinate(lat, lon)
+                }
+            }
+
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 8
@@ -386,10 +420,36 @@ PlasmoidItem {
 
                         center: QtPositioning.coordinate(51.1657, 10.4515)
                         zoomLevel: 6
-                        minimumZoomLevel: 5
+                        // Dynamically compute minimum zoom so the radar frame always
+                        // covers the entire visible map area (no zooming beyond radar BBOX)
+                        minimumZoomLevel: {
+                            var w = radarMap.width
+                            var h = radarMap.height
+                            if (w < 10 || h < 10) return 6
+
+                            // Radar coverage: lon 2.0–19.0, lat 45.0–56.576107
+                            var lonSpan = 17.0 // 19.0 - 2.0
+
+                            // Mercator Y fractions for lat bounds
+                            var latNRad = 56.576107 * Math.PI / 180
+                            var latSRad = 45.0 * Math.PI / 180
+                            var yN = (1 - Math.log(Math.tan(latNRad) + 1 / Math.cos(latNRad)) / Math.PI) / 2
+                            var yS = (1 - Math.log(Math.tan(latSRad) + 1 / Math.cos(latSRad)) / Math.PI) / 2
+                            var latFracSpan = Math.abs(yS - yN)
+
+                            // Zoom where radar fills width: w = lonSpan/360 * 256 * 2^z
+                            var zW = Math.log(w * 360 / (lonSpan * 256)) / Math.LN2
+                            // Zoom where radar fills height: h = latFracSpan * 256 * 2^z
+                            var zH = Math.log(h / (latFracSpan * 256)) / Math.LN2
+
+                            // Take the larger (more zoomed in) to ensure both dimensions are covered
+                            return Math.ceil(Math.max(zW, zH) * 10) / 10
+                        }
                         maximumZoomLevel: 12
 
                         Component.onCompleted: {
+                            radarMap.zoomLevel = radarMap.minimumZoomLevel
+                            radarMap.center = QtPositioning.coordinate(51.1657, 10.4515)
                             // Initial viewport sync after map is rendered
                             Qt.callLater(syncViewport)
                         }
@@ -413,6 +473,7 @@ PlasmoidItem {
                                     var dx = mouse.x - lastX
                                     var dy = mouse.y - lastY
                                     radarMap.pan(-dx, -dy)
+                                    clampCenter()
                                     lastX = mouse.x
                                     lastY = mouse.y
                                 }
@@ -423,6 +484,7 @@ PlasmoidItem {
                                 if (coord.isValid) {
                                     radarMap.center = coord
                                     radarMap.zoomLevel = Math.min(radarMap.maximumZoomLevel, radarMap.zoomLevel + 1)
+                                    clampCenter()
                                 }
                             }
 
@@ -432,6 +494,7 @@ PlasmoidItem {
                                     radarMap.minimumZoomLevel,
                                     Math.min(radarMap.maximumZoomLevel,
                                              radarMap.zoomLevel + delta * 0.5))
+                                clampCenter()
                                 wheel.accepted = true
                             }
                         }
@@ -461,16 +524,38 @@ PlasmoidItem {
                         }
 
                         // Natively lock the WMS image geographically to the map (perfect Web Mercator alignment)
+                        // The WMS BBOX in EPSG:3857 corresponds to these exact lat/lon corners:
+                        // NW corner: lat 56.576107, lon 2.0   SE corner: lat 45.0, lon 19.0
                         MapQuickItem {
                             id: radarOverlayItem
-                            coordinate: QtPositioning.coordinate(51.18, 10.5)
-                            zoomLevel: 6
-                            anchorPoint: Qt.point(387, 420)
+                            // Pin to NW corner of the radar coverage area
+                            coordinate: QtPositioning.coordinate(56.576107, 2.0)
+                            anchorPoint: Qt.point(0, 0)
+                            // Bind to current map zoom so internal scaling is 1:1
+                            // (our fromCoordinate() already computes correct pixel sizes)
+                            zoomLevel: radarMap.zoomLevel
                             z: 10
 
                             sourceItem: Item {
-                                width: 774
-                                height: 840
+                                // Compute overlay size dynamically from the map's pixel projection
+                                // so it always aligns perfectly regardless of window size or zoom level
+                                // We reference radarMap properties to create reactive QML dependencies
+                                width: {
+                                    // Reactive dependencies: re-evaluate when these change
+                                    void(radarMap.zoomLevel); void(radarMap.width); void(radarMap.height)
+                                    void(radarMap.center)
+                                    var nw = radarMap.fromCoordinate(QtPositioning.coordinate(56.576107, 2.0), false)
+                                    var se = radarMap.fromCoordinate(QtPositioning.coordinate(45.0, 19.0), false)
+                                    return Math.max(1, se.x - nw.x)
+                                }
+                                height: {
+                                    // Reactive dependencies: re-evaluate when these change
+                                    void(radarMap.zoomLevel); void(radarMap.width); void(radarMap.height)
+                                    void(radarMap.center)
+                                    var nw = radarMap.fromCoordinate(QtPositioning.coordinate(56.576107, 2.0), false)
+                                    var se = radarMap.fromCoordinate(QtPositioning.coordinate(45.0, 19.0), false)
+                                    return Math.max(1, se.y - nw.y)
+                                }
 
                                 Repeater {
                                     id: imgRepeater
@@ -613,8 +698,11 @@ PlasmoidItem {
                             text: "+"
                             font.pixelSize: 16
                             font.bold: true
-                            onClicked: radarMap.zoomLevel = Math.min(
-                                radarMap.maximumZoomLevel, radarMap.zoomLevel + 1)
+                            onClicked: {
+                                radarMap.zoomLevel = Math.min(
+                                    radarMap.maximumZoomLevel, radarMap.zoomLevel + 1)
+                                clampCenter()
+                            }
                         }
 
                         Button {
@@ -622,8 +710,11 @@ PlasmoidItem {
                             text: "−"
                             font.pixelSize: 16
                             font.bold: true
-                            onClicked: radarMap.zoomLevel = Math.max(
-                                radarMap.minimumZoomLevel, radarMap.zoomLevel - 1)
+                            onClicked: {
+                                radarMap.zoomLevel = Math.max(
+                                    radarMap.minimumZoomLevel, radarMap.zoomLevel - 1)
+                                clampCenter()
+                            }
                         }
 
                         Button {
@@ -639,6 +730,7 @@ PlasmoidItem {
                                 if (hasLocation) {
                                     radarMap.center = root.userCoordinate
                                     radarMap.zoomLevel = 9
+                                    clampCenter()
                                 }
                             }
                         }
