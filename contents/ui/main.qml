@@ -75,9 +75,31 @@ PlasmoidItem {
         return Math.floor(epoch / step) * step
     }
 
+    function getDisplayIndex(currentIndex, states) {
+        if (!states) return currentIndex
+        if (states[currentIndex] === "Ready") {
+            return currentIndex
+        }
+        // Search backwards for the nearest ready frame
+        for (var i = currentIndex - 1; i >= 0; i--) {
+            if (states[i] === "Ready") {
+                return i
+            }
+        }
+        // If none found backwards, search forwards
+        for (var j = currentIndex + 1; j < frameTimes.length; j++) {
+            if (states[j] === "Ready") {
+                return j
+            }
+        }
+        return currentIndex
+    }
+
     function buildFrameTimes() {
         playback.running = false
-        var now = Math.floor(Date.now() / 1000)
+        // Subtract a safety margin of 10 minutes (600 seconds) to account for DWD server-side processing delays.
+        // This prevents requesting the very latest frame before it is actually published on the server.
+        var now = Math.floor(Date.now() / 1000) - 600
         var base = roundEpoch(now)
         var arr = []
         for (var i = 0; i < maxFrames; i++) {
@@ -404,7 +426,7 @@ PlasmoidItem {
                                         id: overlayImg
                                         anchors.fill: parent
                                         fillMode: Image.Stretch
-                                        opacity: index === root.frameIndex ? 0.75 : 0.001
+                                        opacity: index === root.getDisplayIndex(root.frameIndex, root.loadingStates) ? 0.75 : 0.001
                                         cache: true
                                         asynchronous: true
                                         source: {
