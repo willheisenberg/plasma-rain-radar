@@ -59,9 +59,19 @@ PlasmoidItem {
     property real ipLongitude: 0
     property bool ipLocationValid: false
 
-    readonly property var userCoordinate: (positionSource && positionSource.position && positionSource.position.coordinate && positionSource.position.coordinate.isValid)
+    readonly property var rawUserCoordinate: (positionSource && positionSource.position && positionSource.position.coordinate && positionSource.position.coordinate.isValid)
         ? positionSource.position.coordinate
         : (ipLocationValid ? QtPositioning.coordinate(ipLatitude, ipLongitude) : null)
+
+    readonly property var userCoordinate: {
+        var coord = rawUserCoordinate
+        if (coord && coord.isValid && 
+            coord.latitude >= 45.0 && coord.latitude <= 56.576107 && 
+            coord.longitude >= 2.0 && coord.longitude <= 19.0) {
+            return coord
+        }
+        return null
+    }
 
     // ── Viewport state (set by the Map when visible) ──
     property real vpLatMin: 47.0
