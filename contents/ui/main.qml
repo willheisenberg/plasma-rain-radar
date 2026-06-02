@@ -97,7 +97,6 @@ PlasmoidItem {
         var now = Math.floor(Date.now() / 1000) - 600
         var base = roundEpoch(now)
         root.currentBaseTime = base
-        console.log("[RadarDebug] buildFrameTimes: forceReload =", forceReload, "base =", base, "local =", localTimeStr(new Date(base * 1000)))
         var arr = []
         for (var i = 0; i < maxFrames; i++) {
             var ts
@@ -204,7 +203,6 @@ PlasmoidItem {
     }
 
     onExpandedChanged: {
-        console.log("[RadarDebug] onExpandedChanged: root.expanded =", root.expanded)
         if (root.expanded) {
             buildFrameTimes(false) // Smoothly update time window when expanded using cache
         } else {
@@ -221,7 +219,6 @@ PlasmoidItem {
             var now = Math.floor(Date.now() / 1000) - 600
             var newBase = roundEpoch(now)
             if (newBase !== root.currentBaseTime) {
-                console.log("[RadarDebug] autoRefresh: time block changed from", root.currentBaseTime, "to", newBase)
                 buildFrameTimes(false)
             }
         }
