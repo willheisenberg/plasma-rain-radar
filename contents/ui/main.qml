@@ -42,7 +42,7 @@ PlasmoidItem {
             }
         }
         // Show loading screen only if we have less than half of the frames loaded (initial fetch)
-        return readyCount < 30
+        return readyCount < Math.floor(maxFrames / 2)
     }
     property var frameTimes: []        // Array of JS Date objects
     property int radarGeneration: 0    // bumped to force Image reload
@@ -580,31 +580,14 @@ PlasmoidItem {
                             // Pin to NW corner of the radar coverage area
                             coordinate: QtPositioning.coordinate(56.576107, 2.0)
                             anchorPoint: Qt.point(0, 0)
-                            // Bind to current map zoom so internal scaling is 1:1
-                            // (our fromCoordinate() already computes correct pixel sizes)
-                            zoomLevel: radarMap.zoomLevel
+                            // Set zoomLevel to the constant reference level where the 800x868 image
+                            // matches the geographic span. Qt Location will scale it automatically.
+                            zoomLevel: 6.0482
                             z: 10
 
                             sourceItem: Item {
-                                // Compute overlay size dynamically from the map's pixel projection
-                                // so it always aligns perfectly regardless of window size or zoom level
-                                // We reference radarMap properties to create reactive QML dependencies
-                                width: {
-                                    // Reactive dependencies: re-evaluate when these change
-                                    void(radarMap.zoomLevel); void(radarMap.width); void(radarMap.height)
-                                    void(radarMap.center)
-                                    var nw = radarMap.fromCoordinate(QtPositioning.coordinate(56.576107, 2.0), false)
-                                    var se = radarMap.fromCoordinate(QtPositioning.coordinate(45.0, 19.0), false)
-                                    return Math.max(1, se.x - nw.x)
-                                }
-                                height: {
-                                    // Reactive dependencies: re-evaluate when these change
-                                    void(radarMap.zoomLevel); void(radarMap.width); void(radarMap.height)
-                                    void(radarMap.center)
-                                    var nw = radarMap.fromCoordinate(QtPositioning.coordinate(56.576107, 2.0), false)
-                                    var se = radarMap.fromCoordinate(QtPositioning.coordinate(45.0, 19.0), false)
-                                    return Math.max(1, se.y - nw.y)
-                                }
+                                width: 800
+                                height: 868
 
                                 Repeater {
                                     id: imgRepeater
@@ -614,9 +597,13 @@ PlasmoidItem {
                                         id: overlayImg
                                         anchors.fill: parent
                                         fillMode: Image.Stretch
-                                        opacity: index === fullRoot.displayIndex ? 0.75 : 0.001
-                                        cache: true
-                                        asynchronous: true
+                                         opacity: index === fullRoot.displayIndex ? 0.75 : 0.0
+                                         visible: true
+                                         cache: true
+                                         asynchronous: false
+
+                                        property int retryCount: 0
+
                                         source: {
                                             if (root.frameTimes.length === 0) return ""
                                             var t = root.frameTimes[index]
@@ -628,9 +615,10 @@ PlasmoidItem {
                                                 + "&STYLES=&CRS=EPSG:3857"
                                                 + "&BBOX=222638.98,5621521.49,2115070.32,7673967.65"
                                                 + "&WIDTH=800&HEIGHT=868"
-                                                + "&FORMAT=image/png&TRANSPARENT=TRUE"
+                                                + "&FORMAT=image/gif&TRANSPARENT=TRUE"
                                                 + "&TIME=" + root.isoTime(t)
                                                 + "&_g=" + root.radarGeneration
+                                                + "&_retry=" + retryCount
                                         }
 
                                         onStatusChanged: {
@@ -639,11 +627,23 @@ PlasmoidItem {
                                                 states[index] = "Ready"
                                             } else if (status === Image.Error) {
                                                 states[index] = "Error"
+                                                if (retryCount < 3) {
+                                                    console.log("[Radar] Fehler beim Laden von Frame " + index + ", starte Retry " + (retryCount + 1))
+                                                    retryTimer.start()
+                                                }
                                             } else {
                                                 states[index] = "Loading"
                                             }
                                             root.loadingStates = states
                                             fullRoot.updateDisplayIndex()
+                                        }
+
+                                        Timer {
+                                            id: retryTimer
+                                            interval: 2000
+                                            running: false
+                                            repeat: false
+                                            onTriggered: overlayImg.retryCount++
                                         }
                                     }
                                 }
