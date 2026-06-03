@@ -217,11 +217,9 @@ PlasmoidItem {
     onExpandedChanged: {
         if (root.expanded) {
             buildFrameTimes(false) // Smoothly update time window when expanded using cache
-            // Reset map to full radar frame view when opening
-            if (radarMap) {
-                radarMap.zoomLevel = radarMap.minimumZoomLevel
-                radarMap.center = QtPositioning.coordinate(51.1657, 10.4515)
-            }
+            // Map view restoration is handled inside the full representation
+            // (see the Connections block in fullRoot), where radarMap and
+            // clampCenter() are reliably in scope.
         } else {
             playback.running = false
         }
@@ -320,6 +318,12 @@ PlasmoidItem {
                 function onFrameTimesChanged() {
                     fullRoot.updateDisplayIndex()
                 }
+                function onExpandedChanged() {
+                    if (root.expanded) {
+                        // Defer so the map has its final size (minimumZoomLevel depends on it)
+                        Qt.callLater(fullRoot.applyDefaultView)
+                    }
+                }
             }
 
             // Sync viewport from map to root properties
@@ -366,6 +370,41 @@ PlasmoidItem {
                 if (lat !== c.latitude || lon !== c.longitude) {
                     radarMap.center = QtPositioning.coordinate(lat, lon)
                 }
+            }
+
+            // Apply the persisted default view, falling back to the detected
+            // location, then to the full-Germany overview.
+            function applyDefaultView() {
+                if (!radarMap || radarMap.width < 10 || radarMap.height < 10) return
+
+                var cfg = Plasmoid.configuration
+
+                function clampZoom(z) {
+                    return Math.max(radarMap.minimumZoomLevel,
+                                    Math.min(radarMap.maximumZoomLevel, z))
+                }
+
+                if (cfg.hasDefault) {
+                    radarMap.zoomLevel = clampZoom(cfg.defaultZoom)
+                    radarMap.center = QtPositioning.coordinate(cfg.defaultLatitude, cfg.defaultLongitude)
+                } else if (root.userCoordinate !== null && root.userCoordinate.isValid) {
+                    radarMap.zoomLevel = clampZoom(9)
+                    radarMap.center = root.userCoordinate
+                } else {
+                    radarMap.zoomLevel = radarMap.minimumZoomLevel
+                    radarMap.center = QtPositioning.coordinate(51.1657, 10.4515)
+                }
+                clampCenter()
+            }
+
+            // Capture the current map center + zoom as the persisted default.
+            function saveDefaultView() {
+                if (!radarMap) return
+                Plasmoid.configuration.defaultLatitude = radarMap.center.latitude
+                Plasmoid.configuration.defaultLongitude = radarMap.center.longitude
+                Plasmoid.configuration.defaultZoom = radarMap.zoomLevel
+                Plasmoid.configuration.hasDefault = true
+                savedToast.show()
             }
 
             ColumnLayout {
@@ -458,8 +497,8 @@ PlasmoidItem {
                         maximumZoomLevel: 12
 
                         Component.onCompleted: {
-                            radarMap.zoomLevel = radarMap.minimumZoomLevel
-                            radarMap.center = QtPositioning.coordinate(51.1657, 10.4515)
+                            // Apply the saved default (or fallback) once the map is laid out
+                            Qt.callLater(fullRoot.applyDefaultView)
                             // Initial viewport sync after map is rendered
                             Qt.callLater(syncViewport)
                         }
@@ -743,6 +782,53 @@ PlasmoidItem {
                                     clampCenter()
                                 }
                             }
+                        }
+
+                        Button {
+                            width: 32; height: 32
+                            icon.name: "bookmark-new"
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Aktuelle Ansicht als Standard speichern"
+                            onClicked: fullRoot.saveDefaultView()
+                        }
+                    }
+
+                    // ── "Saved as default" toast (transient confirmation) ──
+                    Rectangle {
+                        id: savedToast
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottom: parent.bottom
+                        anchors.bottomMargin: 24
+                        color: "#cc22c55e" // Vibrant green
+                        radius: 6
+                        width: savedToastLabel.implicitWidth + 20
+                        height: savedToastLabel.implicitHeight + 12
+                        opacity: 0.0
+                        visible: opacity > 0.0
+                        z: 25
+
+                        function show() {
+                            opacity = 1.0
+                            savedToastTimer.restart()
+                        }
+
+                        Behavior on opacity {
+                            NumberAnimation { duration: 200; easing.type: Easing.InOutQuad }
+                        }
+
+                        Label {
+                            id: savedToastLabel
+                            anchors.centerIn: parent
+                            text: "Standard gespeichert ✓"
+                            color: "white"
+                            font.pixelSize: 12
+                            font.bold: true
+                        }
+
+                        Timer {
+                            id: savedToastTimer
+                            interval: 1500
+                            onTriggered: savedToast.opacity = 0.0
                         }
                     }
 

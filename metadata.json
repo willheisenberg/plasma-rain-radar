@@ -14,7 +14,7 @@
     "Id": "org.example.plasmoid.rainradar",
     "License": "MIT",
     "Name": "DWD Regenradar",
-    "Version": "0.2.0",
+    "Version": "0.3.0",
     "Website": "https://opendata.dwd.de/weather/radar/sites/"
   },
   "X-Plasma-API-Minimum-Version": "6.0",
