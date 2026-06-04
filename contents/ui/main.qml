@@ -92,6 +92,7 @@ PlasmoidItem {
         // This prevents requesting the very latest frame before it is actually published on the server.
         var now = Math.floor(Date.now() / 1000) - 600
         var base = roundEpoch(now)
+        var oldBase = root.currentBaseTime
         root.currentBaseTime = base
         console.log("[RadarDebug] buildFrameTimes: forceReload =", forceReload, "base =", base, "local =", localTimeStr(new Date(base * 1000)))
         var arr = []
@@ -129,7 +130,6 @@ PlasmoidItem {
             // Shift the index to keep showing the same physical time if possible
             frameIndex = Math.max(0, oldIndex - 1)
             
-            var oldBase = root.currentBaseTime
             var diffSteps = Math.round((base - oldBase) / (stepMinutes * 60))
             if (diffSteps > 0 && diffSteps < maxFrames) {
                 // 1. Remove oldest frames from the beginning
