@@ -32,19 +32,24 @@ PlasmoidItem {
         }
         return false
     }
-    property bool initialLoading: {
-        if (frameTimes.length === 0) return true
-        var readyCount = 0
-        for (var i = 0; i < frameTimes.length; i++) {
-            var s = loadingStates[i]
-            if (s === "Ready" || s === "Error") {
-                readyCount++
+    property bool hasLoadedOnce: false
+    property bool initialLoading: !hasLoadedOnce
+    property var frameTimes: []        // Array of JS Date objects
+
+    onLoadingStatesChanged: {
+        if (!hasLoadedOnce && frameTimes.length > 0) {
+            var readyCount = 0
+            for (var i = 0; i < frameTimes.length; i++) {
+                var s = loadingStates[i]
+                if (s === "Ready" || s === "Error") {
+                    readyCount++
+                }
+            }
+            if (readyCount === frameTimes.length) {
+                hasLoadedOnce = true
             }
         }
-        // Show loading screen only if we have less than half of the frames loaded (initial fetch)
-        return readyCount < Math.floor(maxFrames / 2)
     }
-    property var frameTimes: []        // Array of JS Date objects
     property int radarGeneration: 0    // bumped to force Image reload
 
     // ── GPS/Location Service ──
@@ -126,6 +131,7 @@ PlasmoidItem {
             frameIndex = pastFrames // Start at the "Jetzt" frame (index 36)
             playback.running = false
             loadingStates = {}
+            hasLoadedOnce = false
             radarGeneration++
         } else {
             // Shift the index to keep showing the same physical time if possible
