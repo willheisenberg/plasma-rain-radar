@@ -58,6 +58,32 @@ Die folgenden Variablen koennen in `scripts/fetch_frames.sh` gesetzt werden (Fal
 - `WMS_WIDTH`, `WMS_HEIGHT`
 - `MAX_FRAMES`, `STEP_MINUTES`, `TIME_DIRECTION` (`future` oder `past`)
 
+## GPU-basierte Bereinigung (Shader)
+
+Das Radar-Overlay wird in Echtzeit über einen GLSL-Fragment-Shader ([radar_cleaner.frag](file:///home/tesla/githubprojects/plasma-rain-radar/contents/ui/radar_cleaner.frag)) bereinigt:
+- **Grauer Hintergrund** und der **pinke Erfassungsrand** werden auf Pixelebene (inklusive Kantenglättung/Anti-Aliasing-Übergängen) herausgefiltert.
+- Offizielle Niederschlagsfarben bleiben mathematisch garantiert unberührt.
+
+## Entwicklung & Testing
+
+### 1. Tests ausführen
+Verwende das Unit-Test-Framework, um sicherzustellen, dass die Filterformeln korrekt arbeiten und keine Starkregen-Farben weglöschen:
+```bash
+python3 -m unittest tests/test_shader_logic.py
+```
+
+### 2. Visueller Filter-Simulator
+Lade ein aktuelles Live-Bild herunter und teste Filterparameter interaktiv aus:
+```bash
+python3 tests/test_filter_visual.py
+```
+
+### 3. Shader kompilieren & Widget neu laden
+Wenn du Änderungen am Shader vornimmst, kannst du diese mit dem reload-Skript direkt auf deinen Desktop bringen (erfordert `qsb` auf dem System):
+```bash
+./scripts/dev_reload.sh
+```
+
 ## Datenquelle
 
 Niederschlagsdaten: [DWD GeoServer](https://maps.dwd.de/geoserver/ows) (CC BY 4.0)

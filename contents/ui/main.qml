@@ -593,57 +593,67 @@ PlasmoidItem {
                                     id: imgRepeater
                                     model: root.frameTimes.length
 
-                                    Image {
-                                        id: overlayImg
+                                    ShaderEffect {
+                                        id: overlayEffect
                                         anchors.fill: parent
-                                        fillMode: Image.Stretch
-                                         opacity: index === fullRoot.displayIndex ? 0.75 : 0.0
-                                         visible: true
-                                         cache: true
-                                         asynchronous: false
+                                        opacity: index === fullRoot.displayIndex ? 0.75 : 0.0
+                                        visible: true
 
-                                        property int retryCount: 0
+                                        fragmentShader: "radar_cleaner.frag.qsb"
+                                        property variant source: overlayImg
 
-                                        source: {
-                                            if (root.frameTimes.length === 0) return ""
-                                            var t = root.frameTimes[index]
-                                            if (!t) return ""
+                                        Image {
+                                            id: overlayImg
+                                            anchors.fill: parent
+                                            fillMode: Image.Stretch
+                                            visible: false
+                                            cache: true
+                                            asynchronous: false
+                                            smooth: true
 
-                                            return root.wmsBase
-                                                + "?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap"
-                                                + "&LAYERS=" + root.wmsLayer
-                                                + "&STYLES=&CRS=EPSG:3857"
-                                                + "&BBOX=222638.98,5621521.49,2115070.32,7673967.65"
-                                                + "&WIDTH=800&HEIGHT=868"
-                                                + "&FORMAT=image/gif&TRANSPARENT=TRUE"
-                                                + "&TIME=" + root.isoTime(t)
-                                                + "&_g=" + root.radarGeneration
-                                                + "&_retry=" + retryCount
-                                        }
+                                            property int retryCount: 0
 
-                                        onStatusChanged: {
-                                            var states = Object.assign({}, root.loadingStates)
-                                            if (status === Image.Ready) {
-                                                states[index] = "Ready"
-                                            } else if (status === Image.Error) {
-                                                states[index] = "Error"
-                                                if (retryCount < 3) {
-                                                    console.log("[Radar] Fehler beim Laden von Frame " + index + ", starte Retry " + (retryCount + 1))
-                                                    retryTimer.start()
-                                                }
-                                            } else {
-                                                states[index] = "Loading"
+                                            source: {
+                                                if (root.frameTimes.length === 0) return ""
+                                                var t = root.frameTimes[index]
+                                                if (!t) return ""
+
+                                                return root.wmsBase
+                                                    + "?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap"
+                                                    + "&LAYERS=" + root.wmsLayer
+                                                    + "&STYLES=&CRS=EPSG:3857"
+                                                    + "&BBOX=222638.98,5621521.49,2115070.32,7673967.65"
+                                                    + "&WIDTH=800&HEIGHT=868"
+                                                    + "&FORMAT=image/gif&TRANSPARENT=TRUE"
+                                                    + "&TIME=" + root.isoTime(t)
+                                                    + "&_g=" + root.radarGeneration
+                                                    + "&_retry=" + retryCount
                                             }
-                                            root.loadingStates = states
-                                            fullRoot.updateDisplayIndex()
-                                        }
 
-                                        Timer {
-                                            id: retryTimer
-                                            interval: 2000
-                                            running: false
-                                            repeat: false
-                                            onTriggered: overlayImg.retryCount++
+                                            onStatusChanged: {
+                                                var states = Object.assign({}, root.loadingStates)
+                                                if (status === Image.Ready) {
+                                                    states[index] = "Ready"
+                                                } else if (status === Image.Error) {
+                                                    states[index] = "Error"
+                                                    if (retryCount < 3) {
+                                                        console.log("[Radar] Fehler beim Laden von Frame " + index + ", starte Retry " + (retryCount + 1))
+                                                        retryTimer.start()
+                                                    }
+                                                } else {
+                                                    states[index] = "Loading"
+                                                }
+                                                root.loadingStates = states
+                                                fullRoot.updateDisplayIndex()
+                                            }
+
+                                            Timer {
+                                                id: retryTimer
+                                                interval: 2000
+                                                running: false
+                                                repeat: false
+                                                onTriggered: overlayImg.retryCount++
+                                            }
                                         }
                                     }
                                 }
