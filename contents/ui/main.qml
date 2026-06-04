@@ -21,36 +21,16 @@ PlasmoidItem {
     // ── State ──
     property int frameIndex: 0
     property int currentBaseTime: 0
-    property var loadingStates: ({})
-    property bool loading: {
-        if (frameTimes.length === 0) return false
-        for (var i = 0; i < frameTimes.length; i++) {
-            var s = loadingStates[i]
-            if (s !== "Ready" && s !== "Error") {
-                return true
-            }
-        }
-        return false
-    }
+    property int readyCount: 0
+    property bool loading: readyCount < radarModel.count
     property bool hasLoadedOnce: false
     property bool initialLoading: !hasLoadedOnce
     property var frameTimes: []        // Array of JS Date objects
-
-    onLoadingStatesChanged: {
-        if (!hasLoadedOnce && frameTimes.length > 0) {
-            var readyCount = 0
-            for (var i = 0; i < frameTimes.length; i++) {
-                var s = loadingStates[i]
-                if (s === "Ready" || s === "Error") {
-                    readyCount++
-                }
-            }
-            if (readyCount === frameTimes.length) {
-                hasLoadedOnce = true
-            }
-        }
-    }
     property int radarGeneration: 0    // bumped to force Image reload
+
+    ListModel {
+        id: radarModel
+    }
 
     // ── GPS/Location Service ──
     PositionSource {
@@ -130,12 +110,77 @@ PlasmoidItem {
         if (forceReload) {
             frameIndex = pastFrames // Start at the "Jetzt" frame (index 36)
             playback.running = false
-            loadingStates = {}
             hasLoadedOnce = false
             radarGeneration++
+            
+            radarModel.clear()
+            for (var i = 0; i < arr.length; i++) {
+                var ts = Math.floor(arr[i].getTime() / 1000)
+                var isForecast = (ts >= base)
+                radarModel.append({
+                    "time": arr[i],
+                    "timestamp": ts,
+                    "cb": isForecast ? base : 0,
+                    "status": "Loading"
+                })
+            }
+            readyCount = 0
         } else {
             // Shift the index to keep showing the same physical time if possible
             frameIndex = Math.max(0, oldIndex - 1)
+            
+            var oldBase = root.currentBaseTime
+            var diffSteps = Math.round((base - oldBase) / (stepMinutes * 60))
+            if (diffSteps > 0 && diffSteps < maxFrames) {
+                // 1. Remove oldest frames from the beginning
+                for (var s = 0; s < diffSteps; s++) {
+                    radarModel.remove(0)
+                }
+                
+                // 2. Update remaining frames' cb (since some forecast became past, and new base time updates forecast cb)
+                for (var j = 0; j < radarModel.count; j++) {
+                    var itemTs = radarModel.get(j).timestamp
+                    if (itemTs >= base) {
+                        radarModel.setProperty(j, "cb", base)
+                    } else {
+                        radarModel.setProperty(j, "cb", 0)
+                    }
+                }
+                
+                // 3. Append new forecast frames at the end
+                for (var k = maxFrames - diffSteps; k < maxFrames; k++) {
+                    var kTs = Math.floor(arr[k].getTime() / 1000)
+                    radarModel.append({
+                        "time": arr[k],
+                        "timestamp": kTs,
+                        "cb": base,
+                        "status": "Loading"
+                    })
+                }
+            } else if (diffSteps !== 0) {
+                // Fallback for negative or large shifts
+                radarModel.clear()
+                for (var i = 0; i < arr.length; i++) {
+                    var ts = Math.floor(arr[i].getTime() / 1000)
+                    var isForecast = (ts >= base)
+                    radarModel.append({
+                        "time": arr[i],
+                        "timestamp": ts,
+                        "cb": isForecast ? base : 0,
+                        "status": "Loading"
+                    })
+                }
+            }
+            
+            // Recalculate readyCount
+            var rCount = 0
+            for (var m = 0; m < radarModel.count; m++) {
+                var st = radarModel.get(m).status
+                if (st === "Ready" || st === "Error") {
+                    rCount++
+                }
+            }
+            readyCount = rCount
         }
     }
 
@@ -313,7 +358,7 @@ PlasmoidItem {
             function isImageReady(idx) {
                 if (!imgRepeater) return false
                 var item = imgRepeater.itemAt(idx)
-                return item && item.status === Image.Ready
+                return item && item.isReady
             }
 
             Connections {
@@ -597,7 +642,7 @@ PlasmoidItem {
 
                                 Repeater {
                                     id: imgRepeater
-                                    model: root.frameTimes.length
+                                    model: radarModel
 
                                     ShaderEffect {
                                         id: overlayEffect
@@ -607,6 +652,10 @@ PlasmoidItem {
 
                                         fragmentShader: "radar_cleaner.frag.qsb"
                                         property variant source: overlayImg
+
+                                        readonly property var frameTime: model.time
+                                        readonly property int frameCb: model.cb
+                                        readonly property bool isReady: overlayImg.status === Image.Ready
 
                                         Image {
                                             id: overlayImg
@@ -620,9 +669,7 @@ PlasmoidItem {
                                             property int retryCount: 0
 
                                             source: {
-                                                if (root.frameTimes.length === 0) return ""
-                                                var t = root.frameTimes[index]
-                                                if (!t) return ""
+                                                if (!overlayEffect.frameTime) return ""
 
                                                 return root.wmsBase
                                                     + "?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap"
@@ -631,35 +678,49 @@ PlasmoidItem {
                                                     + "&BBOX=222638.98,5621521.49,2115070.32,7673967.65"
                                                     + "&WIDTH=800&HEIGHT=868"
                                                     + "&FORMAT=image/gif&TRANSPARENT=TRUE"
-                                                    + "&TIME=" + root.isoTime(t)
+                                                    + "&TIME=" + root.isoTime(overlayEffect.frameTime)
                                                     + "&_g=" + root.radarGeneration
+                                                    + "&_cb=" + overlayEffect.frameCb
                                                     + "&_retry=" + retryCount
                                             }
 
                                             onStatusChanged: {
-                                                var states = Object.assign({}, root.loadingStates)
                                                 if (status === Image.Ready) {
-                                                    states[index] = "Ready"
+                                                    radarModel.setProperty(index, "status", "Ready")
                                                 } else if (status === Image.Error) {
-                                                    states[index] = "Error"
+                                                    radarModel.setProperty(index, "status", "Error")
                                                     if (retryCount < 3) {
                                                         console.log("[Radar] Fehler beim Laden von Frame " + index + ", starte Retry " + (retryCount + 1))
                                                         retryTimer.start()
                                                     }
                                                 } else {
-                                                    states[index] = "Loading"
+                                                    radarModel.setProperty(index, "status", "Loading")
                                                 }
-                                                root.loadingStates = states
+                                                
+                                                // Recalculate readyCount
+                                                var rCount = 0
+                                                for (var i = 0; i < radarModel.count; i++) {
+                                                    var s = radarModel.get(i).status
+                                                    if (s === "Ready" || s === "Error") {
+                                                        rCount++
+                                                    }
+                                                }
+                                                root.readyCount = rCount
+                                                
+                                                if (!root.hasLoadedOnce && rCount === radarModel.count && radarModel.count > 0) {
+                                                    root.hasLoadedOnce = true
+                                                }
+                                                
                                                 fullRoot.updateDisplayIndex()
                                             }
+                                        }
 
-                                            Timer {
-                                                id: retryTimer
-                                                interval: 2000
-                                                running: false
-                                                repeat: false
-                                                onTriggered: overlayImg.retryCount++
-                                            }
+                                        Timer {
+                                            id: retryTimer
+                                            interval: 2000
+                                            running: false
+                                            repeat: false
+                                            onTriggered: overlayImg.retryCount++
                                         }
                                     }
                                 }
@@ -887,16 +948,7 @@ PlasmoidItem {
                             }
 
                             Label {
-                                text: {
-                                    var readyCount = 0
-                                    for (var i = 0; i < root.frameTimes.length; i++) {
-                                        var s = root.loadingStates[i]
-                                        if (s === "Ready" || s === "Error") {
-                                            readyCount++
-                                        }
-                                    }
-                                    return readyCount + " von " + root.frameTimes.length + " Bildern geladen"
-                                }
+                                text: root.readyCount + " von " + radarModel.count + " Bildern geladen"
                                 color: "#b0b8c4"
                                 font.pixelSize: 11
                                 anchors.horizontalCenter: parent.horizontalCenter
