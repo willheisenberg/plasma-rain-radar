@@ -1061,9 +1061,9 @@ PlasmoidItem {
                         handle: Rectangle {
                             x: frameSlider.leftPadding + frameSlider.visualPosition * (frameSlider.availableWidth - width)
                             y: frameSlider.topPadding + frameSlider.availableHeight / 2 - height / 2
-                            implicitWidth: 16
-                            implicitHeight: 16
-                            radius: 8
+                            implicitWidth: 24
+                            implicitHeight: 24
+                            radius: 12
                             color: frameSlider.pressed ? "#e2e8f0" : "#ffffff"
                             border.color: "#1e293b"
                             border.width: 2
@@ -1071,9 +1071,9 @@ PlasmoidItem {
                             // Center indicator dot matching the current time context (green = past, blue = future)
                             Rectangle {
                                 anchors.centerIn: parent
-                                width: 6
-                                height: 6
-                                radius: 3
+                                width: 8
+                                height: 8
+                                radius: 4
                                 color: frameSlider.value >= root.pastFrames ? "#3b82f6" : "#22c55e"
                             }
                         }
