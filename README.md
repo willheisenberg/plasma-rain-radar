@@ -8,7 +8,7 @@ KDE-Plasma-Widget (Plasma 6) fuer die Anzeige des DWD-Niederschlagsradars mit in
 
 ## Features
 
-- **Interaktive Karte** — OpenStreetMap-Basiskarte mit Zoom und Pan (Qt Location)
+- **Interaktive Karte** — MapLibre-Vektorkarte (OpenFreeMap) mit Zoom und Pan
 - **DWD Radar-Overlay** — Transparentes Niederschlagsradar direkt vom DWD-WMS
 - **Zeitgesteuerte Animation** — Play/Pause mit Slider und Uhrzeitanzeige
 - **Verlauf & Vorhersage** — Toggle zwischen vergangenen Daten und Niederschlagsvorhersage
@@ -19,6 +19,7 @@ KDE-Plasma-Widget (Plasma 6) fuer die Anzeige des DWD-Niederschlagsradars mit in
 
 - KDE Plasma 6
 - `qt6-location` (fuer die Kartenanzeige)
+- `maplibre-native-qt` (fuer das Rendern der Vektorkarte)
 
 ## Installation
 

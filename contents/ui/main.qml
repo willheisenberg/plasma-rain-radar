@@ -512,10 +512,23 @@ PlasmoidItem {
                         anchors.margins: 1
 
                         plugin: Plugin {
-                            name: "osm"
+                            name: "maplibre"
                             PluginParameter {
-                                name: "osm.mapping.providersrepository.disabled"
-                                value: true
+                                name: "maplibre.map.styles"
+                                value: "https://tiles.openfreemap.org/styles/liberty"
+                            }
+                        }
+
+                        onSupportedMapTypesChanged: {
+                            for (var i = 0; i < supportedMapTypes.length; i++) {
+                                if (supportedMapTypes[i].name.indexOf("liberty") !== -1 ||
+                                    supportedMapTypes[i].name.indexOf("custom") !== -1) {
+                                    activeMapType = supportedMapTypes[i]
+                                    return
+                                }
+                            }
+                            if (supportedMapTypes.length > 0) {
+                                activeMapType = supportedMapTypes[0]
                             }
                         }
 
@@ -953,6 +966,46 @@ PlasmoidItem {
                                 color: "#b0b8c4"
                                 font.pixelSize: 11
                                 anchors.horizontalCenter: parent.horizontalCenter
+                            }
+                        }
+                    }
+
+                    // ── Map Error Overlay ──
+                    Rectangle {
+                        anchors.fill: parent
+                        color: "#cc0c101a"
+                        visible: radarMap.error !== Map.NoError
+                        z: 40
+
+                        Column {
+                            anchors.centerIn: parent
+                            spacing: 12
+                            width: parent.width - 40
+
+                            Label {
+                                text: "Karten-Plugin Fehler ⚠️"
+                                color: "#ef4444"
+                                font.bold: true
+                                font.pixelSize: 14
+                                anchors.horizontalCenter: parent.horizontalCenter
+                            }
+
+                            Label {
+                                text: "Das Karten-Plugin 'maplibre' konnte nicht geladen werden."
+                                color: "#e8eaed"
+                                font.pixelSize: 12
+                                wrapMode: Text.Wrap
+                                horizontalAlignment: Text.AlignHCenter
+                                width: parent.width
+                            }
+
+                            Label {
+                                text: "Bitte installiere das Paket 'maplibre-native-qt' über deinen Paketmanager (z.B. 'sudo pacman -S maplibre-native-qt') und starte die Plasma-Shell neu."
+                                color: "#b0b8c4"
+                                font.pixelSize: 11
+                                wrapMode: Text.Wrap
+                                horizontalAlignment: Text.AlignHCenter
+                                width: parent.width
                             }
                         }
                     }
