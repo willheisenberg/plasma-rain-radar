@@ -269,6 +269,7 @@ PlasmoidItem {
         if (root.expanded) {
             buildFrameTimes(false) // Smoothly update time window when expanded using cache
             root.frameIndex = root.pastFrames // Jump to "Jetzt"
+            fetchIpLocation() // Re-detect location on every open so a network change (e.g. WLAN → mobile) is picked up
             // Map view restoration is handled inside the full representation
             // (see the Connections block in fullRoot), where radarMap and
             // clampCenter() are reliably in scope.
